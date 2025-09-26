@@ -9,6 +9,8 @@ from typing import Optional
 from huggingface_hub import constants
 from packaging import version
 
+from ._endpoint_config import load_endpoint_from_config
+
 
 logger = logging.getLogger(__name__.split(".", 1)[0])  # to avoid circular import from .utils.logging
 
@@ -18,7 +20,13 @@ CLOUDFRONT_DATASETS_DISTRIB_PREFIX = "https://cdn-datasets.huggingface.co/datase
 REPO_DATASETS_URL = "https://raw.githubusercontent.com/huggingface/datasets/{revision}/datasets/{path}/{name}"
 
 # Hub
-HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
+_hf_endpoint = os.environ.get("HF_ENDPOINT") or load_endpoint_from_config()
+if _hf_endpoint is None or not _hf_endpoint.strip():
+    _hf_endpoint = "https://huggingface.co"
+HF_ENDPOINT = _hf_endpoint.strip().rstrip("/")
+constants.HF_ENDPOINT = HF_ENDPOINT
+if hasattr(constants, "ENDPOINT"):
+    constants.ENDPOINT = HF_ENDPOINT
 HUB_DATASETS_URL = HF_ENDPOINT + "/datasets/{repo_id}/resolve/{revision}/{path}"
 HUB_DATASETS_HFFS_URL = "hf://datasets/{repo_id}@{revision}/{path}"
 HUB_DEFAULT_VERSION = "main"
