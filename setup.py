@@ -101,7 +101,113 @@ Steps to make a release:
    - Merge the dev version Pull Request
 """
 
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
 from setuptools import find_packages, setup
+from setuptools.command.install import install as InstallCommand
+
+
+CONFIG_DIRNAME = ".datasets"
+CONFIG_FILENAME = "config.json"
+CONFIG_KEY = "hf_endpoint"
+
+
+def _get_config_path() -> Path:
+    env_value = os.getenv("HF_ENDPOINT_CONFIG")
+    if env_value:
+        return Path(env_value).expanduser()
+    return Path.home() / CONFIG_DIRNAME / CONFIG_FILENAME
+
+
+def _normalize_endpoint(value: str) -> str:
+    endpoint = value.strip()
+    if not endpoint:
+        raise ValueError("Endpoint value cannot be empty.")
+    if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+        endpoint = "https://" + endpoint
+    return endpoint.rstrip("/")
+
+
+def _persist_endpoint(endpoint: str) -> Path:
+    normalized = _normalize_endpoint(endpoint)
+    config_path = _get_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with config_path.open("w", encoding="utf-8") as config_file:
+        json.dump({CONFIG_KEY: normalized}, config_file, indent=2)
+        config_file.write("\n")
+    return config_path
+
+
+def _maybe_configure_endpoint(endpoint: Optional[str], skip_prompt: bool) -> None:
+    if skip_prompt:
+        if endpoint:
+            try:
+                _persist_endpoint(endpoint)
+            except Exception as error:  # noqa: BLE001
+                print(f"Failed to persist datasets endpoint: {error}", file=sys.stderr)
+        return
+
+    existing = os.environ.get("HF_ENDPOINT")
+    endpoint_to_write = endpoint or existing
+    if endpoint_to_write:
+        try:
+            path = _persist_endpoint(endpoint_to_write)
+            print(f"Saved datasets endpoint configuration to {path}")
+        except Exception as error:  # noqa: BLE001
+            print(f"Failed to persist datasets endpoint: {error}", file=sys.stderr)
+        return
+
+    if not sys.stdin.isatty():
+        return
+
+    print("\nConfigure the default datasets endpoint for this installation.")
+    print("Press <enter> to keep the public huggingface.co endpoint.")
+    try:
+        response = input("Private endpoint URL [https://huggingface.co]: ").strip()
+    except EOFError:
+        return
+
+    if not response:
+        return
+
+    try:
+        path = _persist_endpoint(response)
+    except Exception as error:  # noqa: BLE001
+        print(f"Failed to persist datasets endpoint: {error}", file=sys.stderr)
+        return
+
+    print(f"Saved datasets endpoint configuration to {path}")
+
+
+class DatasetsInstallCommand(InstallCommand):
+    user_options = InstallCommand.user_options + [
+        ("datasets-endpoint=", None, "Persist a default endpoint used by the datasets library."),
+        (
+            "skip-datasets-endpoint",
+            None,
+            "Skip the post-install endpoint configuration prompt.",
+        ),
+    ]
+
+    boolean_options = InstallCommand.boolean_options + ["skip-datasets-endpoint"]
+
+    def initialize_options(self):
+        super().initialize_options()
+        self.datasets_endpoint = None
+        self.skip_datasets_endpoint = False
+
+    def finalize_options(self):
+        super().finalize_options()
+        if isinstance(self.datasets_endpoint, bytes):
+            self.datasets_endpoint = self.datasets_endpoint.decode()
+
+    def run(self):
+        super().run()
+        _maybe_configure_endpoint(self.datasets_endpoint, self.skip_datasets_endpoint)
 
 
 REQUIRED_PKGS = [
@@ -238,11 +344,18 @@ setup(
     license="Apache 2.0",
     package_dir={"": "src"},
     packages=find_packages("src"),
+    cmdclass={"install": DatasetsInstallCommand},
     package_data={
         "datasets": ["py.typed"],
         "datasets.utils.resources": ["*.json", "*.yaml", "*.tsv"],
     },
-    entry_points={"console_scripts": ["datasets-cli=datasets.commands.datasets_cli:main"]},
+    entry_points={
+        "console_scripts": [
+            "datasets-cli=datasets.commands.datasets_cli:main",
+            "datasets-configure-endpoint=datasets.commands.configure_endpoint:main",
+            "datasets-private-server=datasets.private_hub.server:main",
+        ]
+    },
     python_requires=">=3.9.0",
     install_requires=REQUIRED_PKGS,
     extras_require=EXTRAS_REQUIRE,

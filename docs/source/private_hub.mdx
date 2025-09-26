@@ -1,0 +1,83 @@
+---
+title: Host a private datasets hub
+---
+
+> ⚠️ The components described below are intentionally lightweight and meant to
+> run inside a trusted environment. Add your organization's authentication and
+> networking controls before exposing them publicly.
+
+## Configure the client endpoint
+
+`datasets` now looks for a persisted endpoint in `~/.datasets/config.json` when
+the `HF_ENDPOINT` environment variable is absent. You can create or update this
+file at any time with the interactive helper:
+
+```bash
+pip install -e .
+datasets-configure-endpoint
+```
+
+The command stores the endpoint and automatically strips trailing slashes. Pass
+`--endpoint` to skip the prompt, or `--non-interactive` when scripting
+installations. During `pip install datasets` you can also provide the value via
+`--datasets-endpoint=https://datasets.local` or set the `HF_ENDPOINT`
+environment variable before installation.
+
+To confirm the configuration, run:
+
+```bash
+python -c "from datasets import config; print(config.HF_ENDPOINT)"
+```
+
+## Run the local hub server
+
+A small FastAPI application lives in `datasets.private_hub.server`. Uploaded
+files are stored on the local filesystem (default: `./private_hub_store`, or the
+path defined by `DATASETS_PRIVATE_STORAGE`) and the service implements the
+endpoints required by the library.
+
+Install the optional dependencies and start the service:
+
+```bash
+pip install fastapi uvicorn
+export DATASETS_PRIVATE_HOST=127.0.0.1
+export DATASETS_PRIVATE_PORT=8080
+python -m datasets.private_hub.server --storage-root /srv/datasets
+```
+
+The API surface mirrors the URLs consumed by `load_dataset` when `HF_ENDPOINT`
+points at your server:
+
+- `GET /datasets` — list repositories.
+- `POST /datasets` — create a new dataset.
+- `POST /datasets/{repo_id}/upload` — upload files for a revision (default:
+  `main`).
+- `GET /datasets/{repo_id}/resolve/{revision}/{path}` — download stored files.
+
+### Control where data lands
+
+Use `DATASETS_PRIVATE_STORAGE` or the `--storage-root` CLI flag to choose the
+directory where repositories are saved. The server creates the directory if it
+doesn't already exist, making it easy to mount a dedicated volume or network
+share for long-term storage.
+
+## Nginx reverse proxy
+
+Place Nginx in front of the Python server to terminate TLS and integrate
+authentication. A sample configuration lives at
+`infrastructure/nginx/datasets.conf` and assumes everything runs on the same
+machine:
+
+```nginx
+include infrastructure/nginx/datasets.conf;
+```
+
+Replace the certificate paths, server name, and authentication block with values
+for your environment.
+
+## Uploading and consuming data
+
+Once the endpoint is configured, existing `datasets` workflows (such as
+`load_dataset`, `Dataset.push_to_hub`, and `datasets-cli`) automatically talk to
+your infrastructure. Share the endpoint URL and any authentication tokens with
+other users so they can collaborate against the private hub.

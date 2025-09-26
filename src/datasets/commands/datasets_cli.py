@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from argparse import ArgumentParser
 
+from datasets.commands.configure_endpoint import ConfigureEndpointCommand
 from datasets.commands.delete_from_hub import DeleteFromHubCommand
 from datasets.commands.env import EnvironmentCommand
 from datasets.commands.test import TestCommand
@@ -22,6 +23,7 @@ def main():
     EnvironmentCommand.register_subcommand(commands_parser)
     TestCommand.register_subcommand(commands_parser)
     DeleteFromHubCommand.register_subcommand(commands_parser)
+    ConfigureEndpointCommand.register_subcommand(commands_parser)
 
     # Parse args
     args, unknown_args = parser.parse_known_args()
