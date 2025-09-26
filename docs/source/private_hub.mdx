@@ -6,6 +6,52 @@ title: Host a private datasets hub
 > run inside a trusted environment. Add your organization's authentication and
 > networking controls before exposing them publicly.
 
+## Quickstart: clone and smoke-test locally
+
+Follow the steps below to try the private stack immediately after cloning the
+repository:
+
+1. **Create a virtual environment and install the package in editable mode.**
+   ```bash
+   git clone https://github.com/huggingface/datasets.git
+   cd datasets
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -e .
+   ```
+2. **Install the lightweight server dependencies.** The FastAPI example only
+   needs `fastapi` and `uvicorn`:
+   ```bash
+   pip install fastapi "uvicorn[standard]"
+   ```
+3. **Point the client at your local hub.** Either export `HF_ENDPOINT` or run
+   the interactive helper (recommended so the setting persists across shells):
+   ```bash
+   datasets-configure-endpoint --endpoint http://127.0.0.1:8080
+   ```
+4. **Start the private hub server** in a separate terminal window:
+   ```bash
+   source .venv/bin/activate  # from the repo root
+   datasets-private-server --host 127.0.0.1 --port 8080 --storage-root ./private_hub_store
+   ```
+5. **Exercise the flow.** In another shell, confirm that standard helpers now
+   talk to your instance:
+   ```bash
+   source .venv/bin/activate
+   python - <<'PY'
+   from datasets import load_dataset
+
+   dataset = load_dataset("csv", data_files={"train": [["text"], ["hello from the private hub"]]})
+   dataset.push_to_hub("alice/test-private")
+   print(load_dataset("alice/test-private")["train"][0])
+   PY
+   ```
+
+The snippet above creates a demo dataset, uploads it to the FastAPI service,
+and downloads it back through the same endpoint.
+
+=======
+
 ## Configure the client endpoint
 
 `datasets` now looks for a persisted endpoint in `~/.datasets/config.json` when
